@@ -25,7 +25,7 @@ import (
 // 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 // }
 
-type NotificationDetails struct {
+type PaymentDetails struct {
 	ReferenceID string  `json:"reference_id" db:"reference_id"`
 	ChannelCode string  `json:"channel_code" db:"channel_code"`
 	Amount      float64 `json:"amount" db:"amount"`
@@ -34,12 +34,12 @@ type NotificationDetails struct {
 }
 
 type NotificationModel struct {
-	ID             int                 `json:"id" db:"id"`
-	CustomerID     uint64              `json:"customer_id" db:"customer_id"`
-	IdempotencyKey string              `json:"idepotency_key" db:"idepotency_key"`
-	Details        NotificationDetails `json:"details" db:"details"`
-	CreatedAt      time.Time           `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time           `json:"updated_at" db:"updated_at"`
+	ID             int            `json:"id" db:"id"`
+	CustomerID     uint64         `json:"customer_id" db:"customer_id"`
+	IdempotencyKey string         `json:"idepotency_key" db:"idepotency_key"`
+	Details        PaymentDetails `json:"details" db:"details"`
+	CreatedAt      time.Time      `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at" db:"updated_at"`
 }
 
 func New() (*sqlx.DB, error) {
@@ -67,7 +67,7 @@ func SetupNotification(Token, URL string, customerID uint64, db *sqlx.DB) error 
 	return tx.Commit()
 }
 
-func SaveNotification(idempotencyKey string, customerID uint64, details NotificationDetails, db *sqlx.DB) error {
+func SaveNotification(idempotencyKey string, customerID uint64, details PaymentDetails, db *sqlx.DB) error {
 	detailsBytes, err := json.Marshal(details)
 	if err != nil {
 		return errors.Wrapf(err, "fail to marshal notification detail")
@@ -76,7 +76,7 @@ func SaveNotification(idempotencyKey string, customerID uint64, details Notifica
 	if err != nil {
 		return errors.Wrapf(err, "fail to save notifications")
 	}
-	_, err = tx.Exec("INSERT INTO notifications (customer_id, idepotency_key, details) VALUES ($1, $2, $3)", customerID, idempotencyKey, types.JSONText(detailsBytes))
+	_, err = tx.Exec("INSERT INTO notifications (customer_id, idempotency_key, details) VALUES ($1, $2, $3)", customerID, idempotencyKey, types.JSONText(detailsBytes))
 	if err != nil {
 		log.Printf("fail to save notifications, error %v, customerID %v, idempotency_key %v, detailsBytes %v", err, customerID, idempotencyKey, details)
 		err = fmt.Errorf("fail to save notifications, error %v, customerID %v, idempotency_key %v, detailsBytes %v", err, customerID, idempotencyKey, details)
@@ -88,18 +88,54 @@ func SaveNotification(idempotencyKey string, customerID uint64, details Notifica
 	return tx.Commit()
 }
 
-func getNotificationURL(customerID uint64, db *sqlx.DB) (uint64, error) {
-	var id uint64
-	rows, err := db.Query("SELECT customer_id from customers where id=$1", customerID)
+func GetNotificationURLAndToken(customerID uint64, db *sqlx.DB) (string, string, error) {
+	var token string
+	var url string
+	rows, err := db.Query("SELECT notification_url, token from customers where id=$1", customerID)
 	if err != nil {
-		return 0, errors.Wrapf(err, "fail to query customer_id")
+		return "", "", errors.Wrapf(err, "fail to query customer_id")
 	}
 	defer rows.Close()
 	for rows.Next() {
-		err := rows.Scan(&id)
+		err := rows.Scan(&url, &token)
 		if err != nil {
-			return 0, errors.Wrapf(err, "fail to query customer id, error")
+			return "", "", errors.Wrapf(err, "fail to query customer id, error")
 		}
 	}
-	return id, nil
+	return url, token, nil
 }
+
+func MarkUpdated(idempotencyKey string, db *sqlx.DB) error {
+	tx, err := db.Beginx()
+	if err != nil {
+		return errors.Wrapf(err, "fail to mark notified notification")
+	}
+	// assume customerID has exist
+	_, err = tx.Exec("Update notifications SET notified=$1 WHERE idempotency_key=$2", true, idempotencyKey)
+	if err != nil {
+		err = fmt.Errorf("fail to mark notified notification, error %v", err)
+		if err1 := tx.Rollback(); err1 != nil {
+			return errors.Wrapf(err1, "fail to mark notified notification, error %v", err1)
+		}
+		return err
+	}
+	return tx.Commit()
+}
+
+// func GetAllCustomerIDs(db *sqlx.DB) ([]uint64, error) {
+// 	var ids []uint64
+// 	rows, err := db.Query("SELECT id from customers")
+// 	if err != nil {
+// 		return []uint64{}, errors.Wrapf(err, "fail to query all customer id")
+// 	}
+// 	defer rows.Close()
+// 	for rows.Next() {
+// 		var id uint64
+// 		err := rows.Scan(&id)
+// 		if err != nil {
+// 			return []uint64{}, errors.Wrapf(err, "fail to query all customer id")
+// 		}
+// 		ids = append(ids, id)
+// 	}
+// 	return ids, nil
+// }

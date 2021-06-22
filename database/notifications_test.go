@@ -64,7 +64,7 @@ func TestSaveNotification(t *testing.T) {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
 	defer db.Close()
-	fixtureDetail := NotificationDetails{
+	fixtureDetail := PaymentDetails{
 		ReferenceID: "mock_reference_id",
 		ChannelCode: "mock_channel_code",
 		Amount:      100000.00,
@@ -77,7 +77,7 @@ func TestSaveNotification(t *testing.T) {
 		name                string
 		givenCustomerID     uint64
 		givenIdempotencyKey string
-		givenDetails        NotificationDetails
+		givenDetails        PaymentDetails
 		wantErr             bool
 	}{
 		// TODO: Add test cases.
