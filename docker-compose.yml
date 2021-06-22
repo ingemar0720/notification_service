@@ -1,0 +1,53 @@
+version: '3.6'
+services:
+  db:
+    image: postgres:12.4-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=mysecretpassword
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    restart: always
+    networks:
+      - xendit_network
+  go:
+    depends_on:
+      - db
+      - migrate
+    image: golang:1.16.0
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/go/src/xendit_api
+    working_dir: /go/src/xendit_api
+    command: go run cmd/main.go
+    networks:
+      - xendit_network
+  seed:
+    depends_on:
+      - db
+      - migrate
+    image: golang:1.16.0
+    volumes:
+      - .:/go/src/xendit_api
+    working_dir: /go/src/xendit_api
+    command: go run cmd/seed/main.go
+    networks:
+      - xendit_network
+  migrate:
+    depends_on:
+      - db
+    image: migrate/migrate
+    volumes:
+      - ./migrations:/migrations
+    command: ["-path", "/migrations", "-database",  "postgres://user:mysecretpassword@db:5432/postgres?sslmode=disable", "up", "1"]
+    links:
+        - db
+    networks:
+      - xendit_network
+volumes:
+  db_data:
+networks:
+  xendit_network:
+    name: xendit_network
