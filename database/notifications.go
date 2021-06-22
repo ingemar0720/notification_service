@@ -12,19 +12,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// type NotificationModel struct {
-// 	ID             int       `json:"id" db:"id"`
-// 	ReferenceID    string    `json:"reference_id" db:"reference_id"`
-// 	CustomerID     int       `json:"customer_id" db:"customer_id"`
-// 	ChannelCode    string    `json:"channel_code" db:"channel_code"`
-// 	IdempotencyKey string    `json:"idepotency_key" db:"idepotency_key"`
-// 	Amount         float64   `json:"amount" db:"amount"`
-// 	Currency       string    `json:"currency" db:"currency"`
-// 	Market         string    `json:"market" db:"market"`
-// 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
-// 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
-// }
-
 type PaymentDetails struct {
 	ReferenceID string  `json:"reference_id" db:"reference_id"`
 	ChannelCode string  `json:"channel_code" db:"channel_code"`
@@ -105,13 +92,31 @@ func GetNotificationURLAndToken(customerID uint64, db *sqlx.DB) (string, string,
 	return url, token, nil
 }
 
-func MarkUpdated(idempotencyKey string, db *sqlx.DB) error {
+func GetNotification(idempotencyKey string, db *sqlx.DB) (PaymentDetails, error) {
+	var detailBytes []byte
+	var detail PaymentDetails
+	rows, err := db.Query("SELECT details from notifications where idempotency_key=$1", idempotencyKey)
+	if err != nil {
+		return PaymentDetails{}, errors.Wrapf(err, "fail to query notification detail")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		err := rows.Scan(&detailBytes)
+		if err != nil {
+			return PaymentDetails{}, errors.Wrapf(err, "fail to query customer id, error")
+		}
+	}
+	json.Unmarshal(detailBytes, &detail)
+	return detail, nil
+}
+
+func MarkUpdated(idempotencyKey string, notified bool, db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		return errors.Wrapf(err, "fail to mark notified notification")
 	}
 	// assume customerID has exist
-	_, err = tx.Exec("Update notifications SET notified=$1 WHERE idempotency_key=$2", true, idempotencyKey)
+	_, err = tx.Exec("Update notifications SET notified=$1 WHERE idempotency_key=$2", notified, idempotencyKey)
 	if err != nil {
 		err = fmt.Errorf("fail to mark notified notification, error %v", err)
 		if err1 := tx.Rollback(); err1 != nil {

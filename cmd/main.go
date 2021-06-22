@@ -29,6 +29,7 @@ func main() {
 	// }()
 	r := chi.NewRouter()
 	r.Post("/notifications", notificationSvc.NotificationHandler)
+	r.Post("/notifications/resend", notificationSvc.ResendHandler)
 	r.Post("/payments", notificationSvc.MockPaymentHandler)
 	log.Fatal(http.ListenAndServe(":5000", r))
 

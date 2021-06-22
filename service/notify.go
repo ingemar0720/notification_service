@@ -24,13 +24,13 @@ type SetupNotificationRequest struct {
 }
 
 type SetupNotificationResponse struct {
-	IdepotencyKey string `json:"idepotency_key"`
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 type NotificationMsg struct {
-	Token         string                  `json:"token"`
-	IdepotencyKey string                  `json:"idepotency_key"`
-	Details       database.PaymentDetails `json:"details"`
+	Token          string                  `json:"token"`
+	IdempotencyKey string                  `json:"idempotency_key"`
+	Details        database.PaymentDetails `json:"details"`
 }
 
 type NotificationSrv struct {
@@ -40,6 +40,13 @@ type NotificationSrv struct {
 type MockPaymentRequest struct {
 	CustomerID uint64                  `json:"customer_id"`
 	Details    database.PaymentDetails `json:"details"`
+}
+
+type ResendRequest struct {
+	CustomerID     int64  `json:"customer_id"`
+	Token          string `json:"token"`
+	SecretKey      string `json:"secret_key"`
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 func sendNotificationWithRetry(url string, body string) error {
@@ -79,7 +86,7 @@ func (srv *NotificationSrv) NotificationHandler(w http.ResponseWriter, r *http.R
 		}
 
 		snresp := SetupNotificationResponse{
-			IdepotencyKey: uuid.String(),
+			IdempotencyKey: uuid.String(),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -121,16 +128,16 @@ func (srv *NotificationSrv) NotifyCustomer(customerID uint64, details database.P
 	database.SaveNotification(idempotencyKey, customerID, details, srv.DB)
 
 	msg := NotificationMsg{
-		IdepotencyKey: idempotencyKey,
-		Token:         token,
-		Details:       details,
+		IdempotencyKey: idempotencyKey,
+		Token:          token,
+		Details:        details,
 	}
 	bodyBytes, err := json.Marshal(msg)
 	if err != nil {
 		log.Println("fail to notify customer, error ", err)
 	}
 	if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
-		database.MarkUpdated(idempotencyKey, srv.DB)
+		database.MarkUpdated(idempotencyKey, true, srv.DB)
 	}
 }
 
@@ -145,6 +152,42 @@ func (srv *NotificationSrv) MockPaymentHandler(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusAccepted)
 	srv.NotifyCustomer(request.CustomerID, request.Details)
+}
+
+func (srv *NotificationSrv) ResendNotification(idempotencyKey string, customerID uint64) {
+	details, err := database.GetNotification(idempotencyKey, srv.DB)
+	if err != nil {
+		log.Println("fail to query notificiation detail, error ", err)
+	}
+	url, token, err := database.GetNotificationURLAndToken(customerID, srv.DB)
+	if err != nil {
+		log.Println("fail to query notificiation url and token", err)
+	}
+	msg := NotificationMsg{
+		IdempotencyKey: idempotencyKey,
+		Token:          token,
+		Details:        details,
+	}
+	bodyBytes, err := json.Marshal(msg)
+	if err != nil {
+		log.Println("fail to marshal notification msg, error ", err)
+	}
+	if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
+		database.MarkUpdated(idempotencyKey, true, srv.DB)
+	}
+}
+
+func (srv *NotificationSrv) ResendHandler(w http.ResponseWriter, r *http.Request) {
+	var request ResendRequest
+
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	srv.ResendNotification(request.IdempotencyKey, uint64(request.CustomerID))
 }
 
 // // MockPaymentLoop regularly query customers table, fetch customer whose's notification has been setup and send a mock notification to the customer.
