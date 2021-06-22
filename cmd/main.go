@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -17,16 +18,9 @@ func main() {
 		log.Fatal(errors.Wrapf(err, "fail to init a DB instance"))
 	}
 
-	// assume there's some
-
-	notificationSvc := service.NotificationSrv{DB: db}
-	// ctx, cancel := context.WithCancel(context.Background())
-	// defer cancel()
-	// go func() {
-	// 	// sleep to wait for notification service alive
-	// 	time.Sleep(2 * time.Second)
-	// 	notificationSvc.MockPaymentLoop(ctx)
-	// }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notificationSvc := service.NotificationSrv{DB: db, Ctx: ctx}
 	r := chi.NewRouter()
 	r.Post("/notifications", notificationSvc.NotificationHandler)
 	r.Post("/notifications/resend", notificationSvc.ResendHandler)

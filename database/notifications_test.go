@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -51,7 +52,7 @@ func TestSetupNotification(t *testing.T) {
 				mock.ExpectRollback()
 			}
 
-			if err := SetupNotification(tt.givenToken, tt.givenURL, tt.givenCustomerID, sqlx.NewDb(db, "sqlmock")); (err != nil) != tt.wantErr {
+			if err := SetupNotification(context.Background(), tt.givenToken, tt.givenURL, tt.givenCustomerID, sqlx.NewDb(db, "sqlmock")); (err != nil) != tt.wantErr {
 				t.Errorf("SetupNotification() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -102,7 +103,7 @@ func TestSaveNotification(t *testing.T) {
 			} else {
 				mock.ExpectRollback()
 			}
-			if err := SaveNotification(tt.givenIdempotencyKey, tt.givenCustomerID, tt.givenDetails, sqlx.NewDb(db, "sqlmock")); (err != nil) != tt.wantErr {
+			if err := SaveNotification(context.Background(), tt.givenIdempotencyKey, tt.givenCustomerID, tt.givenDetails, sqlx.NewDb(db, "sqlmock")); (err != nil) != tt.wantErr {
 				t.Errorf("SaveNotification() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})

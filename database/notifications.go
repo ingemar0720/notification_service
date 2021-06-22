@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -37,13 +38,13 @@ func New() (*sqlx.DB, error) {
 	return db, nil
 }
 
-func SetupNotification(Token, URL string, customerID uint64, db *sqlx.DB) error {
-	tx, err := db.Beginx()
+func SetupNotification(ctx context.Context, Token, URL string, customerID uint64, db *sqlx.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Wrapf(err, "fail to setup notification")
 	}
 	// assume customerID has exist
-	_, err = tx.Exec("Update customers SET token=$1, notification_url=$2 WHERE id=$3", Token, URL, customerID)
+	_, err = tx.ExecContext(ctx, "Update customers SET token=$1, notification_url=$2 WHERE id=$3", Token, URL, customerID)
 	if err != nil {
 		err = fmt.Errorf("fail to setup notification, error %v", err)
 		if err1 := tx.Rollback(); err1 != nil {
@@ -54,16 +55,16 @@ func SetupNotification(Token, URL string, customerID uint64, db *sqlx.DB) error 
 	return tx.Commit()
 }
 
-func SaveNotification(idempotencyKey string, customerID uint64, details PaymentDetails, db *sqlx.DB) error {
+func SaveNotification(ctx context.Context, idempotencyKey string, customerID uint64, details PaymentDetails, db *sqlx.DB) error {
 	detailsBytes, err := json.Marshal(details)
 	if err != nil {
 		return errors.Wrapf(err, "fail to marshal notification detail")
 	}
-	tx, err := db.Beginx()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Wrapf(err, "fail to save notifications")
 	}
-	_, err = tx.Exec("INSERT INTO notifications (customer_id, idempotency_key, details) VALUES ($1, $2, $3)", customerID, idempotencyKey, types.JSONText(detailsBytes))
+	_, err = tx.ExecContext(ctx, "INSERT INTO notifications (customer_id, idempotency_key, details) VALUES ($1, $2, $3)", customerID, idempotencyKey, types.JSONText(detailsBytes))
 	if err != nil {
 		log.Printf("fail to save notifications, error %v, customerID %v, idempotency_key %v, detailsBytes %v", err, customerID, idempotencyKey, details)
 		err = fmt.Errorf("fail to save notifications, error %v, customerID %v, idempotency_key %v, detailsBytes %v", err, customerID, idempotencyKey, details)
@@ -75,10 +76,10 @@ func SaveNotification(idempotencyKey string, customerID uint64, details PaymentD
 	return tx.Commit()
 }
 
-func GetNotificationURLAndToken(customerID uint64, db *sqlx.DB) (string, string, error) {
+func GetNotificationURLAndToken(ctx context.Context, customerID uint64, db *sqlx.DB) (string, string, error) {
 	var token string
 	var url string
-	rows, err := db.Query("SELECT notification_url, token from customers where id=$1", customerID)
+	rows, err := db.QueryContext(ctx, "SELECT notification_url, token from customers where id=$1", customerID)
 	if err != nil {
 		return "", "", errors.Wrapf(err, "fail to query customer_id")
 	}
@@ -92,10 +93,10 @@ func GetNotificationURLAndToken(customerID uint64, db *sqlx.DB) (string, string,
 	return url, token, nil
 }
 
-func GetNotification(idempotencyKey string, db *sqlx.DB) (PaymentDetails, error) {
+func GetNotification(ctx context.Context, idempotencyKey string, db *sqlx.DB) (PaymentDetails, error) {
 	var detailBytes []byte
 	var detail PaymentDetails
-	rows, err := db.Query("SELECT details from notifications where idempotency_key=$1", idempotencyKey)
+	rows, err := db.QueryContext(ctx, "SELECT details from notifications where idempotency_key=$1", idempotencyKey)
 	if err != nil {
 		return PaymentDetails{}, errors.Wrapf(err, "fail to query notification detail")
 	}
@@ -110,13 +111,13 @@ func GetNotification(idempotencyKey string, db *sqlx.DB) (PaymentDetails, error)
 	return detail, nil
 }
 
-func MarkUpdated(idempotencyKey string, notified bool, db *sqlx.DB) error {
-	tx, err := db.Beginx()
+func MarkUpdated(ctx context.Context, idempotencyKey string, notified bool, db *sqlx.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Wrapf(err, "fail to mark notified notification")
 	}
 	// assume customerID has exist
-	_, err = tx.Exec("Update notifications SET notified=$1 WHERE idempotency_key=$2", notified, idempotencyKey)
+	_, err = tx.ExecContext(ctx, "Update notifications SET notified=$1 WHERE idempotency_key=$2", notified, idempotencyKey)
 	if err != nil {
 		err = fmt.Errorf("fail to mark notified notification, error %v", err)
 		if err1 := tx.Rollback(); err1 != nil {

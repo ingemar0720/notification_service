@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github/ingemar0720/xendit/database"
@@ -34,7 +35,8 @@ type NotificationMsg struct {
 }
 
 type NotificationSrv struct {
-	DB *sqlx.DB
+	DB  *sqlx.DB
+	Ctx context.Context
 }
 
 type MockPaymentRequest struct {
@@ -80,7 +82,7 @@ func (srv *NotificationSrv) NotificationHandler(w http.ResponseWriter, r *http.R
 	if !snr.IsTest {
 		// setupNotification
 		uuid := uuid.New()
-		if err := database.SetupNotification(uuid.String(), u.String(), uint64(snr.CustomerID), srv.DB); err != nil {
+		if err := database.SetupNotification(srv.Ctx, uuid.String(), u.String(), uint64(snr.CustomerID), srv.DB); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -120,12 +122,12 @@ func (srv *NotificationSrv) NotificationHandler(w http.ResponseWriter, r *http.R
 }
 
 func (srv *NotificationSrv) NotifyCustomer(customerID uint64, details database.PaymentDetails) {
-	url, token, err := database.GetNotificationURLAndToken(customerID, srv.DB)
+	url, token, err := database.GetNotificationURLAndToken(srv.Ctx, customerID, srv.DB)
 	if err != nil {
 		log.Println("fail to query notification url and token, error ", err)
 	}
 	idempotencyKey := uuid.New().String()
-	database.SaveNotification(idempotencyKey, customerID, details, srv.DB)
+	database.SaveNotification(srv.Ctx, idempotencyKey, customerID, details, srv.DB)
 
 	msg := NotificationMsg{
 		IdempotencyKey: idempotencyKey,
@@ -138,7 +140,7 @@ func (srv *NotificationSrv) NotifyCustomer(customerID uint64, details database.P
 	}
 	go func() {
 		if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
-			database.MarkUpdated(idempotencyKey, true, srv.DB)
+			database.MarkUpdated(srv.Ctx, idempotencyKey, true, srv.DB)
 		}
 	}()
 }
@@ -157,11 +159,11 @@ func (srv *NotificationSrv) MockPaymentHandler(w http.ResponseWriter, r *http.Re
 }
 
 func (srv *NotificationSrv) ResendNotification(idempotencyKey string, customerID uint64) {
-	details, err := database.GetNotification(idempotencyKey, srv.DB)
+	details, err := database.GetNotification(srv.Ctx, idempotencyKey, srv.DB)
 	if err != nil {
 		log.Println("fail to query notificiation detail, error ", err)
 	}
-	url, token, err := database.GetNotificationURLAndToken(customerID, srv.DB)
+	url, token, err := database.GetNotificationURLAndToken(srv.Ctx, customerID, srv.DB)
 	if err != nil {
 		log.Println("fail to query notificiation url and token", err)
 	}
@@ -176,7 +178,7 @@ func (srv *NotificationSrv) ResendNotification(idempotencyKey string, customerID
 	}
 	go func() {
 		if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
-			database.MarkUpdated(idempotencyKey, true, srv.DB)
+			database.MarkUpdated(srv.Ctx, idempotencyKey, true, srv.DB)
 		}
 	}()
 }
