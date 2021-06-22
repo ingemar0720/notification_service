@@ -189,35 +189,3 @@ func (srv *NotificationSrv) ResendHandler(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusAccepted)
 	srv.ResendNotification(request.IdempotencyKey, uint64(request.CustomerID))
 }
-
-// // MockPaymentLoop regularly query customers table, fetch customer whose's notification has been setup and send a mock notification to the customer.
-// func (srv *NotificationSrv) MockPaymentLoop(ctx context.Context) error {
-// 	for {
-// 		log.Println("execuing payment loop")
-// 		select {
-// 		case <-ctx.Done():
-// 			return nil
-// 		default:
-// 			ids, err := database.GetAllCustomerIDs(srv.DB)
-// 			if err != nil {
-// 				return errors.Wrapf(err, "fail to send payment notification")
-// 			}
-// 			for _, id := range ids {
-// 				mockDetail := database.PaymentDetails{
-// 					ReferenceID: fmt.Sprintf("mock_reference_id_%d_%s", id, time.Now().String()),
-// 					ChannelCode: fmt.Sprintln("mock_channel"),
-// 					Amount:      randFloats(5.0, 10000.0),
-// 					Currency:    "SGD",
-// 					Market:      "Singapore",
-// 				}
-// 				srv.NotifyCustomer(id, mockDetail)
-// 			}
-// 			time.Sleep(30 * time.Second)
-// 		}
-// 	}
-// }
-
-// func randFloats(min, max float64) float64 {
-// 	rand.Seed(time.Now().UnixNano())
-// 	return min + rand.Float64()*(max-min)
-// }

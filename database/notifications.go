@@ -126,21 +126,3 @@ func MarkUpdated(idempotencyKey string, notified bool, db *sqlx.DB) error {
 	}
 	return tx.Commit()
 }
-
-// func GetAllCustomerIDs(db *sqlx.DB) ([]uint64, error) {
-// 	var ids []uint64
-// 	rows, err := db.Query("SELECT id from customers")
-// 	if err != nil {
-// 		return []uint64{}, errors.Wrapf(err, "fail to query all customer id")
-// 	}
-// 	defer rows.Close()
-// 	for rows.Next() {
-// 		var id uint64
-// 		err := rows.Scan(&id)
-// 		if err != nil {
-// 			return []uint64{}, errors.Wrapf(err, "fail to query all customer id")
-// 		}
-// 		ids = append(ids, id)
-// 	}
-// 	return ids, nil
-// }
