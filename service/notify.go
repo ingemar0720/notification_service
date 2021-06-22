@@ -115,7 +115,7 @@ func (srv *NotificationSrv) NotificationHandler(w http.ResponseWriter, r *http.R
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		sendNotificationWithRetry(u.String(), string(bodyBytes))
+		go sendNotificationWithRetry(u.String(), string(bodyBytes))
 	}
 }
 
@@ -136,9 +136,11 @@ func (srv *NotificationSrv) NotifyCustomer(customerID uint64, details database.P
 	if err != nil {
 		log.Println("fail to notify customer, error ", err)
 	}
-	if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
-		database.MarkUpdated(idempotencyKey, true, srv.DB)
-	}
+	go func() {
+		if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
+			database.MarkUpdated(idempotencyKey, true, srv.DB)
+		}
+	}()
 }
 
 func (srv *NotificationSrv) MockPaymentHandler(w http.ResponseWriter, r *http.Request) {
@@ -172,9 +174,11 @@ func (srv *NotificationSrv) ResendNotification(idempotencyKey string, customerID
 	if err != nil {
 		log.Println("fail to marshal notification msg, error ", err)
 	}
-	if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
-		database.MarkUpdated(idempotencyKey, true, srv.DB)
-	}
+	go func() {
+		if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
+			database.MarkUpdated(idempotencyKey, true, srv.DB)
+		}
+	}()
 }
 
 func (srv *NotificationSrv) ResendHandler(w http.ResponseWriter, r *http.Request) {
