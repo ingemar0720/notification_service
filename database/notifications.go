@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/jmoiron/sqlx/types"
@@ -19,15 +17,6 @@ type PaymentDetails struct {
 	Amount      float64 `json:"amount" db:"amount"`
 	Currency    string  `json:"currency" db:"currency"`
 	Market      string  `json:"market" db:"market"`
-}
-
-type NotificationModel struct {
-	ID             int            `json:"id" db:"id"`
-	CustomerID     uint64         `json:"customer_id" db:"customer_id"`
-	IdempotencyKey string         `json:"idepotency_key" db:"idepotency_key"`
-	Details        PaymentDetails `json:"details" db:"details"`
-	CreatedAt      time.Time      `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at" db:"updated_at"`
 }
 
 func New() (*sqlx.DB, error) {
@@ -66,7 +55,6 @@ func SaveNotification(ctx context.Context, idempotencyKey string, customerID uin
 	}
 	_, err = tx.ExecContext(ctx, "INSERT INTO notifications (customer_id, idempotency_key, details) VALUES ($1, $2, $3)", customerID, idempotencyKey, types.JSONText(detailsBytes))
 	if err != nil {
-		log.Printf("fail to save notifications, error %v, customerID %v, idempotency_key %v, detailsBytes %v", err, customerID, idempotencyKey, details)
 		err = fmt.Errorf("fail to save notifications, error %v, customerID %v, idempotency_key %v, detailsBytes %v", err, customerID, idempotencyKey, details)
 		if err1 := tx.Rollback(); err1 != nil {
 			return errors.Wrapf(err1, "fail to rollback saveNotification, error %v", err1)
@@ -81,13 +69,13 @@ func GetNotificationURLAndToken(ctx context.Context, customerID uint64, db *sqlx
 	var url string
 	rows, err := db.QueryContext(ctx, "SELECT notification_url, token from customers where id=$1", customerID)
 	if err != nil {
-		return "", "", errors.Wrapf(err, "fail to query customer_id")
+		return "", "", errors.Wrapf(err, "fail to query notification url and user token")
 	}
 	defer rows.Close()
 	for rows.Next() {
 		err := rows.Scan(&url, &token)
 		if err != nil {
-			return "", "", errors.Wrapf(err, "fail to query customer id, error")
+			return "", "", errors.Wrapf(err, "fail to query notification url and user token")
 		}
 	}
 	return url, token, nil
@@ -104,7 +92,7 @@ func GetNotification(ctx context.Context, idempotencyKey string, db *sqlx.DB) (P
 	for rows.Next() {
 		err := rows.Scan(&detailBytes)
 		if err != nil {
-			return PaymentDetails{}, errors.Wrapf(err, "fail to query customer id, error")
+			return PaymentDetails{}, errors.Wrapf(err, "fail to query notification detail")
 		}
 	}
 	json.Unmarshal(detailBytes, &detail)
