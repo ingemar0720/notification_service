@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
@@ -51,9 +52,16 @@ type ResendRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
-func sendNotificationWithRetry(url string, body string) error {
+func sendNotificationWithRetry(url string, body string, token string) error {
 	err := backoff.Retry(func() error {
-		resp, err := http.Post(url, "application/json", bytes.NewBuffer([]byte(body)))
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(body)))
+		if err != nil {
+			log.Println("compose notification request fail, error ", err)
+			return errors.Wrapf(err, "compose notification request fail")
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Add("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return errors.Wrapf(err, "fail to send notification, error %v, resp %v", err, resp)
 		}
@@ -68,6 +76,9 @@ func sendNotificationWithRetry(url string, body string) error {
 
 func (srv *NotificationSrv) NotificationHandler(w http.ResponseWriter, r *http.Request) {
 	var snr SetupNotificationRequest
+	reqToken := r.Header.Get("Authorization")
+	splitToken := strings.Split(reqToken, "Bearer ")
+	reqToken = splitToken[1]
 	err := json.NewDecoder(r.Body).Decode(&snr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -78,15 +89,13 @@ func (srv *NotificationSrv) NotificationHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// setup notification table
 	if !snr.IsTest {
-		// setupNotification
-		uuid := uuid.New()
-		if err := database.SetupNotification(srv.Ctx, uuid.String(), u.String(), uint64(snr.CustomerID), srv.DB); err != nil {
+		if err := database.SetupNotification(srv.Ctx, reqToken, u.String(), uint64(snr.CustomerID), srv.DB); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
+		uuid := uuid.New()
 		snresp := SetupNotificationResponse{
 			IdempotencyKey: uuid.String(),
 		}
@@ -95,7 +104,6 @@ func (srv *NotificationSrv) NotificationHandler(w http.ResponseWriter, r *http.R
 		json.NewEncoder(w).Encode(snresp)
 		return
 	} else {
-		// send notification request
 		mockDetails := database.PaymentDetails{
 			ReferenceID: "test_reference_id",
 			ChannelCode: "test_channel_code",
@@ -117,7 +125,7 @@ func (srv *NotificationSrv) NotificationHandler(w http.ResponseWriter, r *http.R
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		go sendNotificationWithRetry(u.String(), string(bodyBytes))
+		go sendNotificationWithRetry(u.String(), string(bodyBytes), reqToken)
 	}
 }
 
@@ -139,7 +147,7 @@ func (srv *NotificationSrv) NotifyCustomer(customerID uint64, details database.P
 		log.Println("fail to notify customer, error ", err)
 	}
 	go func() {
-		if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
+		if err := sendNotificationWithRetry(url, string(bodyBytes), token); err == nil {
 			database.MarkUpdated(srv.Ctx, idempotencyKey, true, srv.DB)
 		}
 	}()
@@ -177,7 +185,7 @@ func (srv *NotificationSrv) ResendNotification(idempotencyKey string, customerID
 		log.Println("fail to marshal notification msg, error ", err)
 	}
 	go func() {
-		if err := sendNotificationWithRetry(url, string(bodyBytes)); err == nil {
+		if err := sendNotificationWithRetry(url, string(bodyBytes), token); err == nil {
 			database.MarkUpdated(srv.Ctx, idempotencyKey, true, srv.DB)
 		}
 	}()
